@@ -1,43 +1,41 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.set_page_config(page_title="Meine AI App", page_icon="🤖")
-st.title("🤖 Mein AI Assistent")
+st.title("🔍 Diagnose-Modus")
 
-# API Key laden
+# 1. API Key laden
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
+    # Zeige die ersten 4 Zeichen des Keys zur Kontrolle (der Rest bleibt geheim)
+    st.write(f"API Key geladen: {api_key[:4]}... (Länge: {len(api_key)})")
     genai.configure(api_key=api_key)
 except Exception:
-    st.error("API Key fehlt in den Secrets.")
+    st.error("Der API Key fehlt in den Secrets!")
     st.stop()
 
-# WICHTIG: Wir nutzen hier "gemini-1.5-flash", da dies am stabilsten ist.
-# Falls das nicht geht, probieren Sie später "gemini-1.5-pro"
-model_name = "gemini-1.5-flash" 
+st.info("Ich frage Google jetzt, welche Modelle für diesen Key verfügbar sind...")
 
+# 2. Liste der Modelle abrufen
 try:
-    model = genai.GenerativeModel(model_name)
+    found_models = []
+    # Wir iterieren durch alle Modelle, die Google anbietet
+    for m in genai.list_models():
+        # Wir suchen nur Modelle, die Text generieren können ('generateContent')
+        if 'generateContent' in m.supported_generation_methods:
+            found_models.append(m.name)
+    
+    if found_models:
+        st.success("✅ Erfolg! Folgende Modelle sind verfügbar:")
+        st.code("\n".join(found_models))
+        st.write("Bitte kopieren Sie einen dieser Namen (z.B. 'models/gemini-pro') für den nächsten Schritt.")
+    else:
+        st.warning("⚠️ Die Verbindung steht, aber die Liste der Modelle ist leer. Das deutet auf ein Problem mit dem API-Key hin.")
+
 except Exception as e:
-    st.error(f"Fehler beim Laden des Modells: {e}")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Frage stellen..."):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("assistant"):
-        try:
-            stream = model.generate_content(prompt, stream=True)
-            response = st.write_stream(stream)
-            st.session_state.messages.append({"role": "assistant", "content": response})
-        except Exception as e:
-            st.error(f"⚠️ Google API Fehler: {e}")
-            st.info("Tipp: Prüfen Sie, ob der API Key korrekt ist und 'Gemini API' im Google Cloud Projekt aktiviert ist.")
+    st.error(f"❌ Kritischer Verbindungsfehler: {e}")
+    st.markdown("""
+    **Mögliche Ursachen:**
+    1. Der API Key ist ungültig.
+    2. Sie greifen aus einer Region zu, die blockiert ist (selten bei AI Studio).
+    3. Die 'Generative Language API' ist im Google Cloud Projekt nicht aktiviert.
+    """)

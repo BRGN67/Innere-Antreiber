@@ -4,11 +4,10 @@ import google.generativeai as genai
 # --- 1. KONFIGURATION ---
 st.set_page_config(page_title="Meine AI App", page_icon="✨")
 st.title("✨ Meine AI App")
-st.markdown("---") # Trennlinie für bessere Übersicht
+st.markdown("---") 
 
 # API Key laden
 try:
-    # Der API-Key wird sicher aus den Streamlit Secrets geladen.
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
 except Exception:
@@ -17,36 +16,40 @@ except Exception:
 
 # --- 2. DAS MODELL & SYSTEM-ANWEISUNGEN ---
 
-# HIER fügen Sie Ihre speziellen Anweisungen aus AI Studio ein, um das Verhalten des Bots zu steuern.
 meine_system_instruction = """
 Du bist ein hilfreicher Assistent. 
 Antworte bitte immer freundlich und professionell.
 """
 
-# Das Modell, das auf der Diagnose-Liste stand und den höchsten Zugriff hat.
+# Das bestätigte Modell
 model_name = "models/gemini-3-pro-preview" 
 
-try:
-    # Das Modell wird mit der spezifischen Rollenanweisung erstellt.
-    model = genai.GenerativeModel(
-        model_name,
-        system_instruction=meine_system_instruction
-    )
-except Exception as e:
-    st.error(f"Fehler beim Laden des Modells '{model_name}'.")
-    st.error(f"Detail-Fehler: {e}")
-    st.stop()
+# Initialisiere den Chat-Client in der Streamlit Session
+if "chat_session" not in st.session_state:
+    try:
+        # Starte die Chat-Session mit dem Modell und System Instruction
+        model = genai.GenerativeModel(
+            model_name,
+            system_instruction=meine_system_instruction
+        )
+        st.session_state.chat_session = model.start_chat(history=[])
+    except Exception as e:
+        st.error(f"Fehler beim Laden des Modells '{model_name}'.")
+        st.error(f"Detail-Fehler: {e}")
+        st.stop()
 
 # --- 3. CHAT LOGIK ---
 
-# Initialisierung des Chat-Verlaufs (Session State)
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Anzeigen des bisherigen Verlaufs
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Anzeigen des bisherigen Verlaufs aus der ChatSession
+# Die history wird in der Session gespeichert, sodass sich die AI "erinnert"
+for message in st.session_state.chat_session.history:
+    # Die Rollennamen müssen für Streamlit angepasst werden (user/assistant)
+    role = "assistant" if message.role == "model" else message.role
+    
+    # Der Inhalt ist ein "Part", wir extrahieren den Text
+    if message.parts and message.parts[0].text:
+        with st.chat_message(role):
+            st.markdown(message.parts[0].text)
 
 # Eingabefeld für den Nutzer
 if prompt := st.chat_input("Geben Sie hier Ihre Nachricht ein..."):
@@ -54,21 +57,23 @@ if prompt := st.chat_input("Geben Sie hier Ihre Nachricht ein..."):
     # 1. Nutzer-Nachricht im Chat anzeigen
     with st.chat_message("user"):
         st.markdown(prompt)
-    # 2. Nachricht in den Speicher des Chats aufnehmen
-    st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 3. Antwort der AI generieren
+    # 2. Antwort der AI generieren und streamen
     with st.chat_message("assistant"):
         try:
-            # Senden des aktuellen Prompts an das Modell (ohne direkten Verlaufsspeicher 
-            # in der API, da dies einfacher zu debuggen ist).
-            stream = model.generate_content(prompt, stream=True)
+            # Senden der Nachricht an die Chat-Session (die den Verlauf intern speichert)
+            response = st.session_state.chat_session.send_message(prompt, stream=True)
             
-            # Die Antwort streamen (schreibmaschinen-Effekt)
-            response_text = st.write_stream(stream)
+            # 3. Den gestreamten Text robust sammeln und anzeigen
+            full_response = ""
+            for chunk in response:
+                if chunk.text:
+                    full_response += chunk.text
+                    # Anzeigen des Textes im Schreibmaschinen-Effekt
+                    st.markdown(full_response + "▌", unsafe_allow_html=True) 
             
-            # Die vollständige Antwort speichern
-            st.session_state.messages.append({"role": "assistant", "content": response_text})
+            # Finalen Text ohne Cursor anzeigen
+            st.markdown(full_response, unsafe_allow_html=True)
             
         except Exception as e:
             st.error(f"Ein Fehler ist aufgetreten: {e}")

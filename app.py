@@ -16,7 +16,7 @@ except Exception:
     st.stop()
 
 # Modell laden
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-pro')
 
 # Chat-Verlauf initialisieren
 if "messages" not in st.session_state:

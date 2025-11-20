@@ -1,45 +1,43 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Seite konfigurieren
 st.set_page_config(page_title="Meine AI App", page_icon="🤖")
 st.title("🤖 Mein AI Assistent")
 
 # API Key laden
 try:
-    # Versucht, den Key aus den Streamlit Secrets zu laden
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
 except Exception:
-    # Falls kein Key da ist, zeige Fehler
-    st.error("Fehler: Der API-Key wurde nicht in den Secrets gefunden.")
+    st.error("API Key fehlt in den Secrets.")
     st.stop()
 
-# Modell laden
-model = genai.GenerativeModel('gemini-pro')
+# WICHTIG: Wir nutzen hier "gemini-1.5-flash", da dies am stabilsten ist.
+# Falls das nicht geht, probieren Sie später "gemini-1.5-pro"
+model_name = "gemini-1.5-flash" 
 
-# Chat-Verlauf initialisieren
+try:
+    model = genai.GenerativeModel(model_name)
+except Exception as e:
+    st.error(f"Fehler beim Laden des Modells: {e}")
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Alten Verlauf anzeigen
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Eingabe des Nutzers verarbeiten
-if prompt := st.chat_input("Schreiben Sie hier Ihre Frage..."):
-    # 1. Nutzer-Nachricht anzeigen
+if prompt := st.chat_input("Frage stellen..."):
     with st.chat_message("user"):
         st.markdown(prompt)
-    # 2. Ins Gedächtnis speichern
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 3. Antwort generieren
     with st.chat_message("assistant"):
         try:
             stream = model.generate_content(prompt, stream=True)
             response = st.write_stream(stream)
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
-            st.error(f"Ein Fehler ist aufgetreten: {e}")
+            st.error(f"⚠️ Google API Fehler: {e}")
+            st.info("Tipp: Prüfen Sie, ob der API Key korrekt ist und 'Gemini API' im Google Cloud Projekt aktiviert ist.")

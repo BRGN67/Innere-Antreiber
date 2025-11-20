@@ -1,41 +1,79 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.title("🔍 Diagnose-Modus")
+# --- 1. KONFIGURATION ---
+st.set_page_config(page_title="Meine AI App", page_icon="✨")
+st.title("✨ Meine AI App")
 
-# 1. API Key laden
+# API Key laden
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
-    # Zeige die ersten 4 Zeichen des Keys zur Kontrolle (der Rest bleibt geheim)
-    st.write(f"API Key geladen: {api_key[:4]}... (Länge: {len(api_key)})")
     genai.configure(api_key=api_key)
 except Exception:
-    st.error("Der API Key fehlt in den Secrets!")
+    st.error("Fehler: API Key fehlt in den Secrets.")
     st.stop()
 
-st.info("Ich frage Google jetzt, welche Modelle für diesen Key verfügbar sind...")
+# --- 2. DAS MODELL & IHRE ANWEISUNGEN ---
 
-# 2. Liste der Modelle abrufen
+# HIER fügen Sie Ihre speziellen Anweisungen aus AI Studio ein.
+# Wenn Sie keine haben, lassen Sie das Feld einfach leer "".
+meine_system_instruction = """
+Du bist ein hilfreicher Assistent. 
+Antworte bitte immer freundlich und professionell.
+"""
+
+# Das Modell, das Sie auf der Liste gesehen haben
+model_name = "models/gemini-3-pro-preview" 
+
 try:
-    found_models = []
-    # Wir iterieren durch alle Modelle, die Google anbietet
-    for m in genai.list_models():
-        # Wir suchen nur Modelle, die Text generieren können ('generateContent')
-        if 'generateContent' in m.supported_generation_methods:
-            found_models.append(m.name)
-    
-    if found_models:
-        st.success("✅ Erfolg! Folgende Modelle sind verfügbar:")
-        st.code("\n".join(found_models))
-        st.write("Bitte kopieren Sie einen dieser Namen (z.B. 'models/gemini-pro') für den nächsten Schritt.")
-    else:
-        st.warning("⚠️ Die Verbindung steht, aber die Liste der Modelle ist leer. Das deutet auf ein Problem mit dem API-Key hin.")
-
+    # Wir erstellen das Modell mit Ihrer speziellen Anweisung
+    model = genai.GenerativeModel(
+        model_name,
+        system_instruction=meine_system_instruction
+    )
 except Exception as e:
-    st.error(f"❌ Kritischer Verbindungsfehler: {e}")
-    st.markdown("""
-    **Mögliche Ursachen:**
-    1. Der API Key ist ungültig.
-    2. Sie greifen aus einer Region zu, die blockiert ist (selten bei AI Studio).
-    3. Die 'Generative Language API' ist im Google Cloud Projekt nicht aktiviert.
-    """)
+    st.error(f"Fehler beim Laden des Modells '{model_name}'. Bitte prüfen Sie die Schreibweise exakt anhand der Diagnose-Liste.")
+    st.error(f"Detail-Fehler: {e}")
+    st.stop()
+
+# --- 3. CHAT LOGIK ---
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Verlauf anzeigen
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Eingabefeld
+if prompt := st.chat_input("Geben Sie hier Ihre Nachricht ein..."):
+    
+    # Nachricht des Nutzers anzeigen
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Antwort der AI generieren
+    with st.chat_message("assistant"):
+        try:
+            # Wir erstellen einen Chat-Verlauf für das Modell
+            # (Hinweis: Streamlit speichert den Verlauf für die Anzeige, 
+            # aber wir müssen ihn hier für das Modell neu aufbauen, damit es sich erinnert)
+            history = [
+                {"role": m["role"], "parts": [m["content"]]} 
+                for m in st.session_state.messages[:-1] # Alle außer der allerletzten (die kommt jetzt)
+            ]
+            
+            # Da die Modelle manchmal "user" und "model" als Rollennamen erwarten, mappen wir das ggf.
+            # Für diesen einfachen Code senden wir den Prompt direkt.
+            # Für komplexe Chats mit Gedächtnis nutzt man chat = model.start_chat(history=...)
+            
+            # Einfache Variante (Model antwortet auf aktuellen Prompt):
+            stream = model.generate_content(prompt, stream=True)
+            response_text = st.write_stream(stream)
+            
+            st.session_state.messages.append({"role": "assistant", "content": response_text})
+            
+        except Exception as e:
+            st.error(f"Ein Fehler ist aufgetreten: {e}")
